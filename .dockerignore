@@ -1,0 +1,9 @@
+node_modules
+.env
+.env.*
+!.env.example
+ranking-data.json
+*.tmp
+*.log
+README.md
+DOUYIN_CLOUD_DEPLOY.md
