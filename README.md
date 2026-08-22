@@ -1,52 +1,70 @@
 # Douyin Game Server
 
-抖音小游戏后端服务集合仓库。每个子目录对应一个小游戏的后端服务。
+抖音小游戏后端服务集合仓库。每个子目录对应一个小游戏的后端服务，用于部署到抖音云（FaaS / 云托管）。
+
+## 仓库信息
+
+- **GitHub**：`https://github.com/Dengmicheng/Douyin-game-server.git`
+- **Git 用户**：`Dengmicheng` / `2192435330@qq.com`
+- **工作模式**：每次更新后端代码后，同步推送到远端仓库
 
 ## 目录结构
 
-- 2048-game/ — 2048 小游戏后端
-- game2/ — （预留）未来新游戏后端
+```
+Douyin-game-server/
+├── README.md         ← 本文件：仓库说明与游戏后端清单
+├── .gitignore         ← Git 忽略规则
+├── 2048-game/        ← 2048 小游戏后端
+└── game2/            ← （预留）未来新游戏后端
+```
 
-## 2048-game（2048 小游戏）
+## 已包含的游戏后端
 
-- 小游戏 AppID：ttbbdccd6125a6baaa02
-- 技术栈：Node.js（原生 http，零依赖）+ Dockerfile
+### 2048-game（2048 小游戏）
 
-### 接口列表
+- **目录**：`2048-game/`
+- **小游戏 AppID**：`ttbbdccd6125a6baaa02`
+- **技术栈**：Node.js（原生 http，零依赖）+ Dockerfile
+- **部署目标**：抖音云托管
+
+#### 接口列表
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET  | /health | 健康检查 |
-| POST | /auth/douyin | 用 tt.login 返回的 code 换取会话 token |
-| POST | /runs | 提交一局分数（需鉴权）|
-| GET  | /leaderboard | 全局排行榜（需鉴权）|
-| GET  | /me/rank | 个人排名（需鉴权）|
-| GET  | /me/history | 个人历史成绩（需鉴权）|
+| GET  | `/health` | 健康检查 |
+| POST | `/auth/douyin` | 用 `tt.login` 返回的 code 换取会话 token |
+| POST | `/runs` | 提交一局分数（需鉴权） |
+| GET  | `/leaderboard` | 全局排行榜（需鉴权） |
+| GET  | `/me/rank` | 个人排名（需鉴权） |
+| GET  | `/me/history` | 个人历史成绩（需鉴权） |
 
-### 环境变量
+#### 环境变量
 
-DOUYIN_APP_ID=ttbbdccd6125a6baaa02
-DOUYIN_APP_SECRET=<你的 AppSecret，仅配置在云端，勿提交>
-DOUYIN_CODE2SESSION_URL=https://minigame.zijieapi.com/mgplatform/api/apps/jscode2session
-PORT=8000
-DB_PATH=./ranking-data.json
+| 变量 | 说明 | 示例 |
+|------|------|------|
+| `DOUYIN_APP_ID` | 小游戏 AppID | `ttbbdccd6125a6baaa02` |
+| `DOUYIN_APP_SECRET` | 小游戏 AppSecret（仅云端配置） | `<你的 AppSecret>` |
+| `DOUYIN_CODE2SESSION_URL` | code2Session 接口地址 | 按官方文档配置 |
+| `PORT` | 服务监听端口 | `8000` |
+| `DB_PATH` | 数据持久化路径 | `./ranking-data.json` |
 
-### 部署（抖音云 Git 部署）
+> 注意：AppSecret 等敏感信息只配置在抖音云环境变量中，不要提交到 Git。
 
-由于抖音云构建流水线不支持子目录作为构建上下文，实际部署时请使用独立分支：
-- 仓库：Dengmicheng/Douyin-game-server
-- 分支：2048-game（独立分支，根目录直接放 Dockerfile + 后端代码）
-- 部署目录：根目录
-- 健康检查：路径 /health，端口 8000
+#### 部署（抖音云 Git 部署）
+
+- 部署目录：`2048-game`（内含 Dockerfile）
+- 健康检查：路径 `/health`，端口 `8000`
+- 详细说明见 `2048-game/DOUYIN_CLOUD_DEPLOY.md`
 
 ## 如何添加新游戏后端
 
-1. 在仓库中新建子目录，放下该游戏的后端代码（如 game2/）。
-2. 为该游戏创建独立分支（如 game2），分支根目录直接放后端代码。
-3. 在抖音云创建独立服务，绑定对应分支，部署目录指向根目录。
-4. 更新本 README 的游戏清单。
+1. 在仓库根目录新建目录，命名 `游戏名`（如 `game2`）。
+2. 把该游戏的后端代码（`server.mjs`、`Dockerfile`、`package.json`、`.env.example` 等）放进去。
+3. 在抖音云为该游戏创建独立服务，部署目录指向该子目录。
+4. 更新本 README.md 的游戏清单。
 
 ## 注意事项
 
 - AppSecret 等敏感信息只配置在抖音云环境变量中，不要提交到 Git。
-- 当前 2048 后端使用本地 JSON 文件持久化，仅用于开发联调；正式上线前需迁移到云数据库。
+- 当前 2048 后端使用本地 JSON 文件（`DB_PATH`）持久化，仅用于开发联调；正式上线前需迁移到云数据库（MySQL / 云数据库）。
+- 客户端代码在独立仓库 `D:\DSH\workspace\douyin-app` 中维护，与本仓库同级。
