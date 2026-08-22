@@ -1,0 +1,6 @@
+{
+  "name": "douyin-2048-ranking-server",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.mjs" }
+}
