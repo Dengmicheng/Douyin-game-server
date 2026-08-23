@@ -6,9 +6,9 @@ import { URL } from 'node:url';
 
 const PORT = Number(process.env.PORT || 8000);
 const DATA_PATH = path.resolve(process.env.DB_PATH || './ranking-data.json');
-const SESSION_TTL = 30 * 24 * 3600 * 1000;
+// TOKEN_TTL defined below with stateless auth
 
-function initialState() { return { nextUserId: 1, nextRunId: 1, users: [], sessions: [], runs: [] }; }
+function initialState() { return { nextUserId: 1, nextRunId: 1, users: [], runs: [] }; }
 function loadState() {
   try {
     const parsed = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
@@ -34,19 +34,27 @@ async function readJson(req) {
   if (!chunks.length) return {};
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
+// 无状态 token：payload.expire.signature，不依赖服务端 session
+const TOKEN_TTL = 30 * 24 * 3600 * 1000;
+const tokenSecret = () => process.env.DOUYIN_APP_SECRET || 'dev-secret';
+function issueToken(userId) {
+  const payload = Buffer.from(JSON.stringify({ uid: userId, exp: Date.now() + TOKEN_TTL })).toString('base64url');
+  const sig = crypto.createHmac('sha256', tokenSecret()).update(payload).digest('base64url');
+  return payload + '.' + sig;
+}
 function authUser(req) {
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i,'');
   if (!token) return null;
-  const hash = sha256(token);
-  const session = state.sessions.find(s => s.tokenHash === hash && s.expiresAt >= Date.now());
-  return session ? state.users.find(u => u.id === session.userId) || null : null;
-}
-function issueToken(userId) {
-  const token = crypto.randomBytes(32).toString('base64url');
-  state.sessions = state.sessions.filter(s => s.expiresAt >= Date.now());
-  state.sessions.push({ tokenHash: sha256(token), userId, expiresAt: Date.now() + SESSION_TTL });
-  persist();
-  return token;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [payload, sig] = parts;
+  const expected = crypto.createHmac('sha256', tokenSecret()).update(payload).digest('base64url');
+  if (sig !== expected) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (data.exp < Date.now()) return null;
+    return state.users.find(u => u.id === data.uid) || null;
+  } catch { return null; }
 }
 async function exchangeDouyinCode(code) {
   const appid = process.env.DOUYIN_APP_ID;
