@@ -110,6 +110,8 @@ const server = http.createServer(async (req,res) => {
       if (!Number.isSafeInteger(maxTile)||maxTile<2||maxTile>1048576) return json(res,400,{error:'invalid maxTile'});
       if (!Number.isSafeInteger(durationMs)||durationMs<0||durationMs>86400000) return json(res,400,{error:'invalid durationMs'});
       if (!['CLASSIC','ZEN','DAILY'].includes(mode)) return json(res,400,{error:'invalid mode'});
+      const displayName = String(body.displayName || '').trim().slice(0, 32);
+      if (displayName) { user.displayName = displayName; persist(); }
       const run={id:state.nextRunId++,userId:user.id,score,maxTile,durationMs,mode,achievedAt:new Date().toISOString(),version:'1'};
       state.runs.push(run); persist(); return json(res,200,{ok:true,runId:run.id});
     }
