@@ -126,6 +126,12 @@ const server = http.createServer(async (req,res) => {
       const rows=leaderboard(mode); const mine=rows.find(x=>x.userId===user.id); const total=rows.length;
       return json(res,200,mine?{rank:mine.rank,total,score:mine.score,percentile:total?Math.max(0,Math.round((1-(mine.rank-1)/total)*10000)/100):100}:{rank:null,total,score:0,percentile:null});
     }
+    if (req.method === 'POST' && url.pathname === '/me/displayName') {
+      const body = await readJson(req);
+      const name = String(body.displayName || '').trim().slice(0, 32);
+      if (name) { user.displayName = name; persist(); }
+      return json(res,200,{ok:true,displayName:user.displayName});
+    }
     if (req.method === 'GET' && url.pathname === '/me/history') {
       const mode=url.searchParams.get('mode');
       const rows=state.runs.filter(r=>r.userId===user.id && (!mode||r.mode===mode)).sort((a,b)=>b.achievedAt.localeCompare(a.achievedAt)).slice(0,100).map(r=>({score:r.score,maxTile:r.maxTile,durationMs:r.durationMs,mode:r.mode,achievedAt:r.achievedAt}));
