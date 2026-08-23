@@ -31,6 +31,12 @@ function ensureUserPrivacy(user) {
   if (!user) return false;
   let changed = false;
   const legacyAlias = String(user.displayName || '').match(/^匿名(?:玩家|用户)(\d{4})$/);
+  if (legacyAlias) {
+    if (typeof user.isAnonymous !== 'boolean') user.isAnonymous = true;
+    if (!/^\d{4}$/.test(String(user.anonymousId || ''))) user.anonymousId = legacyAlias[1];
+    user.displayName = '玩家';
+    changed = true;
+  }
   if (typeof user.isAnonymous !== 'boolean') { user.isAnonymous = !!legacyAlias; changed = true; }
   if (!/^\d{4}$/.test(String(user.anonymousId || ''))) {
     user.anonymousId = legacyAlias?.[1] || generatedAnonymousId(user);
@@ -152,7 +158,7 @@ const server = http.createServer(async (req,res) => {
         const dailyChanged = ensureDailyState(user);
         if (privacyChanged || dailyChanged) persist();
       }
-      return json(res,200,{token:issueToken(user.id)});
+      return json(res,200,{token:issueToken(user.id),isAnonymous:user.isAnonymous,anonymousId:user.anonymousId,displayName:publicDisplayName(user),realDisplayName:user.displayName || '玩家'});
     }
 
     const user = authUser(req);
@@ -184,7 +190,11 @@ const server = http.createServer(async (req,res) => {
       const body = await readJson(req);
       applyPrivacyUpdate(user, body);
       persist();
-      return json(res,200,{ok:true,displayName:publicDisplayName(user),isAnonymous:user.isAnonymous});
+      return json(res,200,{ok:true,displayName:publicDisplayName(user),realDisplayName:user.displayName || '玩家',isAnonymous:user.isAnonymous,anonymousId:user.anonymousId});
+    }
+    if (req.method === 'GET' && url.pathname === '/me/privacy') {
+      if (ensureUserPrivacy(user)) persist();
+      return json(res,200,{ok:true,isAnonymous:user.isAnonymous,anonymousId:user.anonymousId,displayName:publicDisplayName(user),realDisplayName:user.displayName || '玩家'});
     }
     if (req.method === 'GET' && url.pathname === '/me/daily') {
       if (ensureDailyState(user)) persist();
