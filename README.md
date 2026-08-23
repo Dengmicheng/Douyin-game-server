@@ -37,6 +37,10 @@ Douyin-game-server/
 | GET  | `/leaderboard` | 全局排行榜（需鉴权） |
 | GET  | `/me/rank` | 个人排名（需鉴权） |
 | GET  | `/me/history` | 个人历史成绩（需鉴权） |
+| POST | `/me/displayName` | 更新真实昵称/匿名状态（需鉴权） |
+| GET  | `/me/daily` | 查询每日挑战剩余次数（需鉴权） |
+| POST | `/me/daily/consume` | 消耗一次每日挑战机会（需鉴权） |
+| POST | `/me/daily/reward` | 激励广告完成后增加一次挑战机会（需鉴权） |
 
 #### 环境变量
 

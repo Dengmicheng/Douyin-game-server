@@ -23,6 +23,52 @@ function persist() {
   fs.renameSync(tmp, DATA_PATH);
 }
 const sha256 = s => crypto.createHash('sha256').update(String(s)).digest('hex');
+function generatedAnonymousId(user) {
+  const seed = user?.platformId || user?.id || crypto.randomBytes(8).toString('hex');
+  return String((parseInt(sha256(seed).slice(0, 8), 16) % 9000) + 1000);
+}
+function ensureUserPrivacy(user) {
+  if (!user) return false;
+  let changed = false;
+  const legacyAlias = String(user.displayName || '').match(/^匿名(?:玩家|用户)(\d{4})$/);
+  if (typeof user.isAnonymous !== 'boolean') { user.isAnonymous = !!legacyAlias; changed = true; }
+  if (!/^\d{4}$/.test(String(user.anonymousId || ''))) {
+    user.anonymousId = legacyAlias?.[1] || generatedAnonymousId(user);
+    changed = true;
+  }
+  if (legacyAlias) { user.displayName = '玩家'; changed = true; }
+  if (!String(user.displayName || '').trim()) { user.displayName = '玩家'; changed = true; }
+  return changed;
+}
+function publicDisplayName(user) {
+  if (!user) return '玩家';
+  ensureUserPrivacy(user);
+  return user.isAnonymous ? '匿名用户' + user.anonymousId : (user.displayName || '玩家');
+}
+function applyPrivacyUpdate(user, body) {
+  ensureUserPrivacy(user);
+  const name = String(body.displayName || '').trim().slice(0, 32);
+  if (name && !/^匿名(?:玩家|用户)\d{4}$/.test(name)) user.displayName = name;
+  if (typeof body.isAnonymous === 'boolean') user.isAnonymous = body.isAnonymous;
+  const candidate = String(body.anonymousId || '');
+  if (!user.anonymousId && /^\d{4}$/.test(candidate)) user.anonymousId = candidate;
+}
+const DAILY_FREE_ATTEMPTS = 3;
+function chinaDayKey(now = Date.now()) {
+  return new Date(now + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+function ensureDailyState(user) {
+  const today = chinaDayKey();
+  let changed = false;
+  if (!user.daily || user.daily.date !== today) {
+    user.daily = { date: today, remaining: DAILY_FREE_ATTEMPTS };
+    changed = true;
+  } else {
+    const normalized = Math.max(0, Math.floor(Number(user.daily.remaining) || 0));
+    if (normalized !== user.daily.remaining) { user.daily.remaining = normalized; changed = true; }
+  }
+  return changed;
+}
 function json(res, code, body) {
   const data = Buffer.from(JSON.stringify(body));
   res.writeHead(code, { 'content-type':'application/json; charset=utf-8', 'content-length':data.length });
@@ -82,7 +128,7 @@ function leaderboard(mode, limit=100000) {
   const sorted = [...bestByUser.values()].sort((a,b) => b.score-a.score || a.durationMs-b.durationMs || a.achievedAt.localeCompare(b.achievedAt));
   return sorted.slice(0,limit).map((r,i) => {
     const u = state.users.find(x=>x.id===r.userId);
-    return { rank:i+1, userId:r.userId, displayName:u?.displayName || '玩家', score:r.score, maxTile:r.maxTile, durationMs:r.durationMs, achievedAt:r.achievedAt };
+    return { rank:i+1, userId:r.userId, displayName:publicDisplayName(u), score:r.score, maxTile:r.maxTile, durationMs:r.durationMs, achievedAt:r.achievedAt };
   });
 }
 
@@ -96,7 +142,16 @@ const server = http.createServer(async (req,res) => {
       if (!code) return json(res,400,{error:'code required'});
       const platformId = await exchangeDouyinCode(code);
       let user = state.users.find(u=>u.platformId===platformId);
-      if (!user) { user={id:state.nextUserId++,platformId,displayName:'玩家',createdAt:new Date().toISOString()}; state.users.push(user); persist(); }
+      if (!user) {
+        user={id:state.nextUserId++,platformId,displayName:'玩家',isAnonymous:false,anonymousId:'',daily:{date:chinaDayKey(),remaining:DAILY_FREE_ATTEMPTS},createdAt:new Date().toISOString()};
+        user.anonymousId = generatedAnonymousId(user);
+        state.users.push(user);
+        persist();
+      } else {
+        const privacyChanged = ensureUserPrivacy(user);
+        const dailyChanged = ensureDailyState(user);
+        if (privacyChanged || dailyChanged) persist();
+      }
       return json(res,200,{token:issueToken(user.id)});
     }
 
@@ -110,8 +165,7 @@ const server = http.createServer(async (req,res) => {
       if (!Number.isSafeInteger(maxTile)||maxTile<2||maxTile>1048576) return json(res,400,{error:'invalid maxTile'});
       if (!Number.isSafeInteger(durationMs)||durationMs<0||durationMs>86400000) return json(res,400,{error:'invalid durationMs'});
       if (!['CLASSIC','ZEN','DAILY'].includes(mode)) return json(res,400,{error:'invalid mode'});
-      const displayName = String(body.displayName || '').trim().slice(0, 32);
-      if (displayName) { user.displayName = displayName; persist(); }
+      applyPrivacyUpdate(user, body);
       const run={id:state.nextRunId++,userId:user.id,score,maxTile,durationMs,mode,achievedAt:new Date().toISOString(),version:'1'};
       state.runs.push(run); persist(); return json(res,200,{ok:true,runId:run.id});
     }
@@ -125,6 +179,29 @@ const server = http.createServer(async (req,res) => {
       const mode=['CLASSIC','ZEN','DAILY'].includes(url.searchParams.get('mode'))?url.searchParams.get('mode'):'CLASSIC';
       const rows=leaderboard(mode); const mine=rows.find(x=>x.userId===user.id); const total=rows.length;
       return json(res,200,mine?{rank:mine.rank,total,score:mine.score,percentile:total?Math.max(0,Math.round((1-(mine.rank-1)/total)*10000)/100):100}:{rank:null,total,score:0,percentile:null});
+    }
+    if (req.method === 'POST' && url.pathname === '/me/displayName') {
+      const body = await readJson(req);
+      applyPrivacyUpdate(user, body);
+      persist();
+      return json(res,200,{ok:true,displayName:publicDisplayName(user),isAnonymous:user.isAnonymous});
+    }
+    if (req.method === 'GET' && url.pathname === '/me/daily') {
+      if (ensureDailyState(user)) persist();
+      return json(res,200,{date:user.daily.date,remaining:user.daily.remaining});
+    }
+    if (req.method === 'POST' && url.pathname === '/me/daily/consume') {
+      ensureDailyState(user);
+      if (user.daily.remaining <= 0) return json(res,200,{ok:false,date:user.daily.date,remaining:0});
+      user.daily.remaining -= 1;
+      persist();
+      return json(res,200,{ok:true,date:user.daily.date,remaining:user.daily.remaining});
+    }
+    if (req.method === 'POST' && url.pathname === '/me/daily/reward') {
+      ensureDailyState(user);
+      user.daily.remaining += 1;
+      persist();
+      return json(res,200,{ok:true,date:user.daily.date,remaining:user.daily.remaining});
     }
     if (req.method === 'GET' && url.pathname === '/me/history') {
       const mode=url.searchParams.get('mode');
